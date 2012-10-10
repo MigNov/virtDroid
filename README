@@ -1,0 +1,18 @@
+ VirtDroid
+===========
+
+VirtDroid is Virtual Machine Controller tool for Android operating
+systems to allow your Android device to connect to php-virt-control
+instance over the XMLRPC. This is useful for e.g. starting and/or
+stopping your virtual machines even when you're not having access
+to the computer but you have the public IP address of the server
+node and you have access to any WiFi network or you can use 3G
+connection.
+
+LICENSES
+--------
+Software is using the Android XMLRPC Client and both the Android
+XMLRPC Client library sources and VirtDroid application are
+published under Apache Licence 2.0 (ASL-2.0) licence.
+
+See LICENSE file for more information.
