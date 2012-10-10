@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <PreferenceCategory
+        android:title="PHP-Virt-Control Connection"
+        android:key="first_category">
+
+        <EditTextPreference
+            android:key="address"
+            android:title="XML-RPC Address"
+            android:summary="Define the XML-RPC Address"
+            android:dialogTitle="XML-RPC Address"
+            android:dialogMessage="Provide PHP-Virt-Control XMLRPC address"
+            android:defaultValue="http://domain.tld/php-virt-control/xmlrpc.php" />
+
+        <EditTextPreference
+            android:key="apikey"
+            android:title="API Key"
+            android:summary="Define the API Key"
+            android:dialogTitle="Your API Key"
+            android:dialogMessage="Provide Your XMLRPC API Key"
+            android:defaultValue="your_api_key"
+            android:maxLength="140" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="Domain list"
+        android:key="second_category">
+
+        <CheckBoxPreference
+            android:key="perform_updates"
+            android:summary="Enable or disable domain list updates"
+            android:title="Update domain list"
+            android:defaultValue="false"
+        />
+
+        <ListPreference
+            android:key="updates_interval"
+            android:title="Updates interval"
+            android:summary="Define how often updates will be performed"
+            android:defaultValue="1000"
+            android:entries="@array/updateInterval"
+            android:entryValues="@array/updateIntervalValues"
+            android:dependency="perform_updates"
+        />
+
+    </PreferenceCategory>
+
+</PreferenceScreen>
