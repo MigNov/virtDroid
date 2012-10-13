@@ -415,7 +415,7 @@ public class Client extends Activity {
 		} catch (XMLRPCFault f) {
 			textView.setText("XMLRPC returned error: " + f.getFaultString());
 		} catch (XMLRPCException e) {
-			textView.setText("XMLRPC connection error");
+			textView.setText("XMLRPC connection error: " + e.getMessage());
 		}
 	}
 
@@ -456,7 +456,7 @@ public class Client extends Activity {
 		} catch (XMLRPCFault f) {
 			textView.setText("XMLRPC returned error: " + f.getFaultString());
 		} catch (XMLRPCException e) {
-			textView.setText("XMLRPC connection error");
+			textView.setText("XMLRPC connection error: " + e.getMessage());
 		}
 	}
 
@@ -521,7 +521,7 @@ public class Client extends Activity {
 		} catch (XMLRPCFault f) {
 			textView.setText("XMLRPC returned error: " + f.getFaultString());
 		} catch (XMLRPCException e) {
-			textView.setText("XMLRPC connection error");
+			textView.setText("XMLRPC connection error: " + e.getMessage());
 		}
 	}
 
@@ -549,7 +549,7 @@ public class Client extends Activity {
 		} catch (XMLRPCFault f) {
 			textView.setText("XMLRPC returned error: " + f.getFaultString());
 		} catch (XMLRPCException e) {
-			textView.setText("XMLRPC connection error");
+			textView.setText("XMLRPC connection error: " + e.getMessage());
 		}
 
 		return ret;
@@ -585,7 +585,7 @@ public class Client extends Activity {
 		} catch (XMLRPCFault f) {
 			textView.setText("XMLRPC returned error: " + f.getFaultString());
 		} catch (XMLRPCException e) {
-			textView.setText("XMLRPC connection error");
+			textView.setText("XMLRPC connection error: " + e.getMessage());
 		}
 
 		return ret;
