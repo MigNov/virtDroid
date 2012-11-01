@@ -21,14 +21,17 @@ import org.xmlrpc.android.XMLRPCException;
 import org.xmlrpc.android.XMLRPCFault;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager.NameNotFoundException;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
 import android.preference.PreferenceManager;
 import android.text.method.ScrollingMovementMethod;
+import android.util.Log;
 import android.view.ContextMenu;
 import android.view.ContextMenu.ContextMenuInfo;
 import android.view.KeyEvent;
@@ -42,22 +45,19 @@ import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 
-public class Client extends Activity {
-	private XMLRPCClient client;
-	private URI uri;
-	private TextView textView;
+class phpVirtControlXMLRPC extends AsyncTask<HashMap<String, Object>, Void, Map<String, Object>> {
+
+	Map<String, Object> res = null;
+	private XMLRPCClient client = null;
 	private ListView listView;
-	private ArrayList<String> dNames;
-	private ArrayList<String> cNames;
-	private ArrayList<String> cUris;
-	private String myUri = null;
-	private Boolean changingUri = true;
-	private Boolean phaseThree = false;
-	private Boolean domainList = false;
-	private Boolean inAboutDlg = false;
-	private long interval = -1;
-	private Thread thread = null;
-	private String domName = null;
+	private TextView textView;
+	private String type;
+	private Context context;
+	private Client appClass = null;
+	private ArrayList<String> dNames = new ArrayList<String>();
+	private ArrayList<String> cNames = new ArrayList<String>();
+	private ArrayList<String> cUris = new ArrayList<String>();
+	private String message;
 
 	private boolean isServerReachable(String str) {
 		URL url;
@@ -77,6 +77,165 @@ public class Client extends Activity {
 
 		return false;
 	}
+
+	private void setError(final String str) {
+		this.appClass.setProcessingState(false, null);
+        this.appClass.runOnUiThread(new Runnable() {
+            public void run() {
+            	textView.setText(str);
+            }
+        });
+	}
+
+	protected Map<String, Object> doInBackground(HashMap<String,Object>... params) {
+		HashMap<String, Object> param = params[0];
+		this.type = (String) param.get("page");
+		this.textView = (TextView) param.get("textView");
+		this.listView = (ListView) param.get("listView");
+		this.dNames = (ArrayList<String>) param.get("dNames");
+		this.cNames = (ArrayList<String>) param.get("cNames");
+		this.cUris = (ArrayList<String>) param.get("cUris");
+		this.context = (Context) param.get("context");
+		this.appClass = (Client) param.get("appClass");
+		this.message = (String) param.get("message");
+		String uristr = (String) param.get("address");
+		String method = (String) param.get("method");
+
+		param.remove("textView");
+		param.remove("listView");
+		param.remove("dNames");
+		param.remove("cNames");
+		param.remove("cUris");
+		param.remove("context");
+		param.remove("cNames");
+		param.remove("dNames");
+		param.remove("cUris");
+		param.remove("appClass");
+		param.remove("message");
+
+		try {
+			if (this.isServerReachable(uristr)) {
+				URI uri = URI.create(uristr);
+	     	    client = new XMLRPCClient(uri);
+
+		    	@SuppressWarnings("unchecked")
+				Map<String, Object> res = (Map<String, Object>) client.call(method, param);
+				return res;
+	    	  }
+	    	  else
+	    		this.setError("Server unreachable");
+	    } catch (XMLRPCFault f) {
+	    	this.setError("XMLRPC returned error: " + f.getFaultString());
+	    } catch (XMLRPCException e) {
+	    	this.setError("XMLRPC connection error: " + e.getMessage());
+	    }
+
+	    return null;
+	}
+
+	@SuppressWarnings("unchecked")
+	public void onPostExecute(Map<String, Object> res) {
+	    this.appClass.setProcessingState(false, this.message);
+
+	    if (res == null)
+			return;
+
+	    cNames = this.cNames;
+	    dNames = this.dNames;
+	    cUris  = this.cUris;
+
+	    if (cNames == null)
+	    	cNames = new ArrayList<String>();
+	    if (cUris == null)
+	    	cUris = new ArrayList<String>();
+	    if (dNames == null)
+	    	dNames = new ArrayList<String>();
+
+	    if (this.type.equals("connections")) {
+	    	for (String key : res.keySet()) {
+				Map<String, String> value = (Map<String, String>) res.get(key);
+
+	    	    String uri = value.get("uri");
+	    	    String name = value.get("name");
+
+	    	    cNames.add(name);
+	    	    cUris.add(uri);
+	    	}
+
+    	    this.appClass.setConnections(cNames, cUris);
+	    	this.listView.setAdapter(new ArrayAdapter<String>(this.context,
+	                android.R.layout.simple_list_item_1,
+	                cNames));
+
+	    	this.listView.setVisibility(View.VISIBLE);
+		}
+		else
+		if (this.type.equals("domains")) {
+   	    	for (String key : res.keySet()) {
+   	    		dNames.add(res.get(key).toString());
+   	    	}
+
+    	    this.appClass.setDomains(dNames);
+
+   	    	listView.setAdapter(new ArrayAdapter<String>(this.context,
+   	    			android.R.layout.simple_list_item_1,
+   	    			dNames));
+   	    	listView.setVisibility(View.VISIBLE);
+		}
+		else
+		if (this.type.equals("domain-info")) {
+        	String newText = "Domain information:\nState: " + res.get("state") + "\nArchitecture: "
+        			+ res.get("arch") + "\nvCPUs: " + res.get("nrVirtCpu") + "\nMemory: " +
+        			(Integer.parseInt(res.get("memory").toString()) / 1024) + " MiB / " +
+        			(Integer.parseInt(res.get("maxMem").toString()) / 1024) + " MiB\nFeatures: " +
+        			res.get("features")+"\nClock offset: " + res.get("clock-offset") + "\n";
+
+        	Map<String, Object> res2 = (Map<String, Object>) res.get("boot_devices");
+        	newText += "First boot device: " + res2.get("0") + "\n";
+
+        	res2 = (Map<String, Object>) res.get("multimedia");
+        	newText += "\nMultimedia:\n";
+        	Map<String, Object> res3 = (Map<String, Object>) res2.get("video");
+        	newText += "\tVideo:\n\t\tType: " + res3.get("type") + "\n\t\tVideo RAM: " +
+        			(Integer.parseInt(res3.get("vram").toString()) / 1024) + " MiB\n\t\tHeads: " + res3.get("heads")+"\n";
+        	res3 = (Map<String, Object>) res2.get("graphics");
+        	newText += "\tGraphics:\n\t\tType: " + res3.get("type") + "\n\t\tAutoport: " +
+     			   res3.get("autoport") + "\n\t\tPort: " + res3.get("port")+"\n";
+        	res3 = (Map<String, Object>) res2.get("input");
+        	newText += "\tInput:\n\t\tType: " + res3.get("type") + "\n\t\tBus: " +
+     			   res3.get("bus")+"\n";
+        	res3 = (Map<String, Object>) res2.get("console");
+        	newText += "\tConsole:\n\t\tType: " + res3.get("type") + "\n\t\tTarget port: " +
+     			   res3.get("targetPort")+"\n\t\tTarget type: " + res3.get("targetType");
+
+        	textView.setText(newText);
+		}
+		else
+		if (this.type.equals("domain-state")) {
+   	    	Toast.makeText(this.context, res.get("state").toString(), Toast.LENGTH_SHORT).show();
+		}
+		else
+     	if (this.type.equals("domain-activity")) {
+ 			Toast.makeText(this.context, res.get("msg").toString(), Toast.LENGTH_SHORT).show();
+     	}
+	}
+ }
+
+public class Client extends Activity {
+	private TextView textView;
+	private ListView listView;
+	private ArrayList<String> dNames;
+	private ArrayList<String> cNames;
+	private ArrayList<String> cUris;
+	private String myUri = null;
+	private Boolean changingUri = true;
+	private Boolean phaseThree = false;
+	private Boolean inDomainList = false;
+	private Boolean inAboutDlg = false;
+	private String domName = null;
+	private boolean isProcessingState;
+	private int interval = -1;
+	private Thread thread = null;
 
 	@Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -105,8 +264,6 @@ public class Client extends Activity {
   		  }
 
     	  SharedPreferences sharedPrefs = PreferenceManager.getDefaultSharedPreferences(this);
-          String uristr = sharedPrefs.getString("address", "NULL");
-
           if (sharedPrefs.getBoolean("perform_updates", false))
         	  interval = Integer.parseInt(sharedPrefs.getString("updates_interval", "-1"));
 
@@ -114,24 +271,17 @@ public class Client extends Activity {
           cNames = new ArrayList<String>();
           cUris = new ArrayList<String>();
 
-    	  if (isServerReachable(uristr)) {
-     		  uri = URI.create(uristr);
-     		  client = new XMLRPCClient(uri);
-
-     		  this.getConnectionsMethod();
-    	  }
-    	  else
-    		  textView.setText("Server unreachable");
+          this.getConnectionsMethod();
 
           final Handler uiHandler = new Handler();
-
           thread = new Thread(new Runnable() {
         	  private long lastTime;
+        	  private boolean isStopped = false;
 
               public void run(){
             	  while ( true ) {
-            	    if ((interval > 0) && (domainList)
-            	    		&& (System.currentTimeMillis() > lastTime + interval)) {
+            	    if ((!isStopped) && ((interval > 0) && (inDomainList)
+            	    		&& (System.currentTimeMillis() > lastTime + interval))) {
             		  this.refresh();
             		  lastTime = System.currentTimeMillis();
             	    }
@@ -168,12 +318,25 @@ public class Client extends Activity {
 	@Override
 	public void onDestroy() {
 		try {
-	        thread.stop();
+			thread.interrupt();
 		} catch (Exception e) {
-			// Do nothing
+			// Make Java happy :-)
 		}
 
 	    super.onDestroy();
+	}
+
+	public void setConnections(ArrayList<String> aNames, ArrayList<String> aUris) {
+		cUris = aUris;
+		cNames = aNames;
+	}
+
+	public void setDomains(ArrayList<String> aNames) {
+		dNames = aNames;
+	}
+
+	public void setTextView(String str) {
+    	textView.setText(str);
 	}
 
 	@Override
@@ -185,18 +348,7 @@ public class Client extends Activity {
 	    	}
 	    	else
 	    	if (!changingUri) {
-          		SharedPreferences sharedPrefs = PreferenceManager.getDefaultSharedPreferences(this);
-           		String uristr = sharedPrefs.getString("address", "NULL");
-
-          	    if (isServerReachable(uristr)) {
-         		    uri = URI.create(uristr);
-         		    client = new XMLRPCClient(uri);
-
-         		    this.getConnectionsMethod();
-        	    }
-        	    else
-        		    textView.setText("Server unreachable");
-
+       		    this.getConnectionsMethod();
 	    		return true;
 	    	}
 	    	else
@@ -213,8 +365,10 @@ public class Client extends Activity {
     public void onCreateContextMenu(ContextMenu menu, View v,
         ContextMenuInfo menuInfo) {
         AdapterView.AdapterContextMenuInfo info = (AdapterView.AdapterContextMenuInfo)menuInfo;
-        String listItemName = dNames.get(info.position);
+        if ((info == null) || (info.position > dNames.size() - 1))
+        	return;
 
+        String listItemName = dNames.get(info.position);
   	    if (listItemName.contains(" ")) {
 		    String[] tmp = listItemName.split(" ");
 		    listItemName = tmp[0];
@@ -230,33 +384,38 @@ public class Client extends Activity {
     @Override
     public boolean onContextItemSelected(MenuItem item) {
       AdapterView.AdapterContextMenuInfo info = (AdapterView.AdapterContextMenuInfo)item.getMenuInfo();
-      //String[] menuItems = getResources().getStringArray(R.array.domActions);
+      if ((info == null) || (info.position > dNames.size() - 1))
+      	return false;
       String domainName = dNames.get(info.position);
       String action = item.getTitle().toString();
+      String state = null;
 
 	  if (domainName.contains(" ")) {
 		  String[] tmp = domainName.split(" ");
 	      domainName = tmp[0];
+	      state = tmp[1];
 	  }
 
       if (action.equals("Start")) {
-    	  if (this.isDomainRunning(domainName)) {
+    	  if (state.equals("(running)")) {
     		  Toast.makeText(getApplicationContext(), "Domain is already running", Toast.LENGTH_SHORT).show();
     		  return true;
     	  }
 
-    	  setDomainActivity(domainName, true);
-    	  this.getDomainList();
+  		  inDomainList = false;
+  		  phaseThree = true;
+    	  setDomainActivity(domainName, true, true);
       }
       else
       if (action.equals("Stop")) {
-    	  if (!this.isDomainRunning(domainName)) {
+    	  if (!state.equals("(running)")) {
     		  Toast.makeText(getApplicationContext(), "Domain is not running yet", Toast.LENGTH_SHORT).show();
     		  return true;
           }
 
-    	  setDomainActivity(domainName, false);
-    	  this.getDomainList();
+  		  inDomainList = false;
+  		  phaseThree = true;
+    	  setDomainActivity(domainName, false, true);
       }
       else
       if (action.equals("Get information")) {
@@ -275,20 +434,7 @@ public class Client extends Activity {
     }
 
     private void refreshConnectionList() {
-  		SharedPreferences sharedPrefs = PreferenceManager.getDefaultSharedPreferences(this);
-   		String uristr = sharedPrefs.getString("address", "NULL");
-        if (sharedPrefs.getBoolean("perform_updates", false))
-      	  interval = Integer.parseInt(sharedPrefs.getString("updates_interval", "-1"));
-
-        try {
-       		uri = URI.create(uristr);
-       		client = new XMLRPCClient(uri);
-
-       		this.getConnectionsMethod();
-        } catch (Exception e) {
-        	Toast.makeText(getApplicationContext(), "Error on creating URI",
-        			Toast.LENGTH_LONG).show();
-        }
+       	this.getConnectionsMethod();
 
    		changingUri = true;
    		inAboutDlg = false;
@@ -301,16 +447,19 @@ public class Client extends Activity {
     	if (inAboutDlg)
     		return super.onPrepareOptionsMenu(menu);
 
-    	if (phaseThree) {
-            menu.add(Menu.NONE, 0, 0, "Start");
-            menu.add(Menu.NONE, 1, 0, "Stop");
-            menu.add(Menu.NONE, 2, 0, "Refresh");
-    	}
-    	else
     	if (changingUri) {
             menu.add(Menu.NONE, 0, 0, "Options");
             menu.add(Menu.NONE, 1, 0, "Refresh");
             menu.add(Menu.NONE, 2, 0, "About");
+    	}
+    	else
+    	if (inDomainList)
+    		menu.add(Menu.NONE, 0, 0, "Refresh");
+    	else
+    	if (phaseThree) {
+            menu.add(Menu.NONE, 0, 0, "Start");
+            menu.add(Menu.NONE, 1, 0, "Stop");
+            menu.add(Menu.NONE, 2, 0, "Refresh");
     	}
 
         return super.onPrepareOptionsMenu(menu);
@@ -321,15 +470,18 @@ public class Client extends Activity {
         switch (item.getItemId()) {
             case 0:
             	if (phaseThree) {
-            		setDomainActivity(domName, true);
+            		setDomainActivity(domName, true, false);
             		this.getDomainInformation(domName);
         		}
+            	else
+            	if (inDomainList)
+            		getDomainList();
             	else
             		startActivity(new Intent(this, PrefsActivity.class));
                 return true;
             case 1:
             	if (phaseThree) {
-            		setDomainActivity(domName, false);
+            		setDomainActivity(domName, false, false);
             		this.getDomainInformation(domName);
             	}
             	else
@@ -372,98 +524,101 @@ public class Client extends Activity {
 
 	@SuppressWarnings("unchecked")
 	private void getConnectionsMethod() {
-		textView.setText("");
-		domainList = false;
+		if (this.isProcessingState)
+			return;
+
 		inAboutDlg = false;
+		inDomainList = false;
 		listView.setVisibility(View.INVISIBLE);
-		try {
-            SharedPreferences sharedPrefs = PreferenceManager.getDefaultSharedPreferences(this);
-            String apikey = sharedPrefs.getString("apikey", "NULL");
 
-            HashMap<String, String> cParams = new HashMap<String, String>();
-            cParams.put("uri", "list");
+        SharedPreferences sharedPrefs = PreferenceManager.getDefaultSharedPreferences(this);
+        String address = sharedPrefs.getString("address", "NULL");
+        String apikey = sharedPrefs.getString("apikey", "NULL");
 
-            HashMap<String, String> dParams = new HashMap<String, String>();
-            dParams.put("type", "list");
+        HashMap<String, String> cParams = new HashMap<String, String>();
+        cParams.put("uri", "list");
 
-            HashMap<String, Object> params = new HashMap<String, Object>();
-        	params.put("apikey", apikey);
-        	params.put("connection", cParams);
-        	params.put("data", dParams);
+        HashMap<String, String> dParams = new HashMap<String, String>();
+        dParams.put("type", "list");
 
-        	changingUri = true;
+        HashMap<String, Object> params = new HashMap<String, Object>();
+        params.put("address", address);
+    	params.put("apikey", apikey);
+    	params.put("page", "connections");
+    	params.put("textView", textView);
+    	params.put("listView", listView);
+    	params.put("appClass", this);
+    	params.put("message", "Connection list:");
+    	params.put("context", getApplicationContext());
+        params.put("method", "Information.get");
+    	params.put("connection", cParams);
+    	params.put("data", dParams);
 
-        	cNames.clear();
-        	cUris.clear();
+    	changingUri = true;
 
-        	Map<String, Object> res = (Map<String, Object>) client.call("Information.get", params);
-        	for (String key : res.keySet()) {
-        	    Map<String, String> value = (Map<String, String>) res.get(key);
+    	cNames.clear();
+    	cUris.clear();
 
-        	    String uri = value.get("uri");
-        	    String name = value.get("name");
+   	    phpVirtControlXMLRPC rpc = new phpVirtControlXMLRPC();
+   	    rpc.execute(params);
 
-        	    cNames.add(name);
-        	    cUris.add(uri);
-        	}
-
-        	listView.setAdapter(new ArrayAdapter<String>(this,
-  	                android.R.layout.simple_list_item_1,
-  	                cNames));
-
-        	listView.setVisibility(View.VISIBLE);
-		} catch (XMLRPCFault f) {
-			textView.setText("XMLRPC returned error: " + f.getFaultString());
-		} catch (XMLRPCException e) {
-			textView.setText("XMLRPC connection error: " + e.getMessage());
-		}
-	}
+   	    this.setProcessingState(true, null);
+}
 
 	@SuppressWarnings("unchecked")
 	private void getDomainList() {
-    	changingUri = false;
+		if (this.isProcessingState)
+			return;
+
+		inDomainList = true;
+		changingUri = false;
     	phaseThree = false;
-		textView.setText("Domain list: ");
-		domainList = true;
 		inAboutDlg = false;
-		try {
-            SharedPreferences sharedPrefs = PreferenceManager.getDefaultSharedPreferences(this);
-            String apikey = sharedPrefs.getString("apikey", "NULL");
-            if (sharedPrefs.getBoolean("perform_updates", false))
-            	  interval = Integer.parseInt(sharedPrefs.getString("updates_interval", "-1"));
 
-            HashMap<String, String> cParams = new HashMap<String, String>();
-            cParams.put("uri", myUri);
+		SharedPreferences sharedPrefs = PreferenceManager.getDefaultSharedPreferences(this);
+        String apikey = sharedPrefs.getString("apikey", "NULL");
+        String address = sharedPrefs.getString("address", "NULL");
 
-            HashMap<String, String> dParams = new HashMap<String, String>();
-            dParams.put("type", "list");
+		if (sharedPrefs.getBoolean("perform_updates", false))
+        	  interval = Integer.parseInt(sharedPrefs.getString("updates_interval", "-1"));
 
-            HashMap<String, Object> params = new HashMap<String, Object>();
-        	params.put("apikey", apikey);
-        	params.put("connection", cParams);
-        	params.put("data", dParams);
+        HashMap<String, String> cParams = new HashMap<String, String>();
+        cParams.put("uri", myUri);
 
-        	dNames.clear();
-			Map<String, Object> res = (Map<String, Object>) client.call("Domain.list_state", params);
-        	for (String key : res.keySet()) {
-        		dNames.add(res.get(key).toString());
-        	}
+        HashMap<String, String> dParams = new HashMap<String, String>();
+        dParams.put("type", "list");
 
-        	listView.setAdapter(new ArrayAdapter<String>(this,
-  	                android.R.layout.simple_list_item_1,
-  	                dNames));
-    		listView.setVisibility(View.VISIBLE);
-		} catch (XMLRPCFault f) {
-			textView.setText("XMLRPC returned error: " + f.getFaultString());
-		} catch (XMLRPCException e) {
-			textView.setText("XMLRPC connection error: " + e.getMessage());
-		}
+        HashMap<String, Object> params = new HashMap<String, Object>();
+        params.put("address", address);
+        params.put("method", "Domain.list_state");
+    	params.put("apikey", apikey);
+    	params.put("page", "domains");
+    	params.put("textView", textView);
+    	params.put("listView", listView);
+    	params.put("message", "Domain list:");
+    	params.put("context", getApplicationContext());
+    	params.put("appClass", this);
+    	params.put("connection", cParams);
+    	params.put("data", dParams);
+
+    	dNames.clear();
+
+   	    phpVirtControlXMLRPC rpc = new phpVirtControlXMLRPC();
+   	    rpc.execute(params);
+
+   	    this.setProcessingState(true, null);
 	}
 
 	@SuppressWarnings("unchecked")
 	private void getDomainInformation(String name) {
-    	changingUri = false;
+		if (this.isProcessingState)
+			return;
+
+		inDomainList = false;
+		changingUri = false;
 		inAboutDlg = false;
+   	    phaseThree = true;
+
 		textView.setText("Domain information:");
 		listView.setVisibility(View.INVISIBLE);
 
@@ -473,125 +628,96 @@ public class Client extends Activity {
 		}
 
 		domName = name;
-		domainList = false;
+        SharedPreferences sharedPrefs = PreferenceManager.getDefaultSharedPreferences(this);
+        String apikey = sharedPrefs.getString("apikey", "NULL");
+        String address = sharedPrefs.getString("address", "NULL");
 
-		try {
-            SharedPreferences sharedPrefs = PreferenceManager.getDefaultSharedPreferences(this);
-            String apikey = sharedPrefs.getString("apikey", "NULL");
+        HashMap<String, String> cParams = new HashMap<String, String>();
+        cParams.put("uri", myUri);
 
-            HashMap<String, String> cParams = new HashMap<String, String>();
-            cParams.put("uri", myUri);
+        HashMap<String, String> dParams = new HashMap<String, String>();
+        dParams.put("name", name);
 
-            HashMap<String, String> dParams = new HashMap<String, String>();
-            dParams.put("name", name);
+        HashMap<String, Object> params = new HashMap<String, Object>();
+        params.put("address", address);
+        params.put("method", "Domain.info");
+    	params.put("apikey", apikey);
+    	params.put("page", "domain-info");
+    	params.put("textView", textView);
+    	params.put("listView", listView);
+    	params.put("appClass", this);
+    	params.put("message", "Domain information for " + name + ":");
+    	params.put("context", getApplicationContext());
+    	params.put("connection", cParams);
+    	params.put("data", dParams);
 
-            HashMap<String, Object> params = new HashMap<String, Object>();
-        	params.put("apikey", apikey);
-        	params.put("connection", cParams);
-        	params.put("data", dParams);
+   	    phpVirtControlXMLRPC rpc = new phpVirtControlXMLRPC();
+   	    rpc.execute(params);
 
-        	Map<String, Object> res = (Map<String, Object>) client.call("Domain.info", params);
-
-        	String newText = "Domain name: " + name + "\nState: " + res.get("state") + "\nArchitecture: "
-        			+ res.get("arch") + "\nvCPUs: " + res.get("nrVirtCpu") + "\nMemory: " +
-        			(Integer.parseInt(res.get("memory").toString()) / 1024) + " MiB / " +
-        			(Integer.parseInt(res.get("maxMem").toString()) / 1024) + " MiB\nFeatures: " +
-        			res.get("features")+"\nClock offset: " + res.get("clock-offset") + "\n";
-
-        	Map<String, Object> res2 = (Map<String, Object>) res.get("boot_devices");
-        	newText += "First boot device: " + res2.get("0") + "\n";
-
-        	res2 = (Map<String, Object>) res.get("multimedia");
-        	newText += "\nMultimedia:\n";
-        	Map<String, Object> res3 = (Map<String, Object>) res2.get("video");
-        	newText += "\tVideo:\n\t\tType: " + res3.get("type") + "\n\t\tVideo RAM: " +
-        			(Integer.parseInt(res3.get("vram").toString()) / 1024) + " MiB\n\t\tHeads: " + res3.get("heads")+"\n";
-        	res3 = (Map<String, Object>) res2.get("graphics");
-        	newText += "\tGraphics:\n\t\tType: " + res3.get("type") + "\n\t\tAutoport: " +
-     			   res3.get("autoport") + "\n\t\tPort: " + res3.get("port")+"\n";
-        	res3 = (Map<String, Object>) res2.get("input");
-        	newText += "\tInput:\n\t\tType: " + res3.get("type") + "\n\t\tBus: " +
-     			   res3.get("bus")+"\n";
-        	res3 = (Map<String, Object>) res2.get("console");
-        	newText += "\tConsole:\n\t\tType: " + res3.get("type") + "\n\t\tTarget port: " +
-     			   res3.get("targetPort")+"\n\t\tTarget type: " + res3.get("targetType");
-
-        	textView.setText(newText);
-        	phaseThree = true;
-		} catch (XMLRPCFault f) {
-			textView.setText("XMLRPC returned error: " + f.getFaultString());
-		} catch (XMLRPCException e) {
-			textView.setText("XMLRPC connection error: " + e.getMessage());
-		}
+   	    this.setProcessingState(true, null);
 	}
 
-	private String getDomainState(String name) {
-		String ret = null;
-
-		try {
-            SharedPreferences sharedPrefs = PreferenceManager.getDefaultSharedPreferences(this);
-            String apikey = sharedPrefs.getString("apikey", "NULL");
-
-            HashMap<String, String> cParams = new HashMap<String, String>();
-            cParams.put("uri", myUri);
-
-            HashMap<String, String> dParams = new HashMap<String, String>();
-            dParams.put("name", name);
-
-            HashMap<String, Object> params = new HashMap<String, Object>();
-        	params.put("apikey", apikey);
-        	params.put("connection", cParams);
-        	params.put("data", dParams);
-
-        	@SuppressWarnings("unchecked")
-			Map<String, Object> res = (Map<String, Object>) client.call("Domain.info", params);
-        	ret = res.get("state").toString();
-		} catch (XMLRPCFault f) {
-			textView.setText("XMLRPC returned error: " + f.getFaultString());
-		} catch (XMLRPCException e) {
-			textView.setText("XMLRPC connection error: " + e.getMessage());
+	void setProcessingState(boolean b, String str) {
+		this.isProcessingState = b;
+		if (b)
+			this.textView.setText("Getting data ...");
+		else
+		if (str != null) {
+			if (str.indexOf("@refresh=") > -1) {
+				String name = str.split("=")[1];
+				this.getDomainInformation(name);
+			}
+			else
+			if (str.indexOf("@refreshDomainList") > -1) {
+				this.getDomainList();
+			}
+			else
+				this.textView.setText(str);
 		}
-
-		return ret;
 	}
 
 	@SuppressWarnings("unchecked")
-	private String setDomainActivity(String name, Boolean active) {
-		String ret = null;
+	private void setDomainActivity(String name, Boolean active, Boolean toDomainList) {
+		if (this.isProcessingState)
+			return;
+
 		String action = null;
 
-		try {
-            SharedPreferences sharedPrefs = PreferenceManager.getDefaultSharedPreferences(this);
-            String apikey = sharedPrefs.getString("apikey", "NULL");
+        SharedPreferences sharedPrefs = PreferenceManager.getDefaultSharedPreferences(this);
+        String apikey = sharedPrefs.getString("apikey", "NULL");
+        String address = sharedPrefs.getString("address", "NULL");
 
-            HashMap<String, String> cParams = new HashMap<String, String>();
-            cParams.put("uri", myUri);
+        HashMap<String, String> cParams = new HashMap<String, String>();
+        cParams.put("uri", myUri);
 
-            HashMap<String, String> dParams = new HashMap<String, String>();
-            dParams.put("name", name);
+        HashMap<String, String> dParams = new HashMap<String, String>();
+        dParams.put("name", name);
 
-            HashMap<String, Object> params = new HashMap<String, Object>();
-        	params.put("apikey", apikey);
-        	params.put("connection", cParams);
-        	params.put("data", dParams);
+        HashMap<String, Object> params = new HashMap<String, Object>();
+        params.put("address", address);
+    	params.put("apikey", apikey);
+    	params.put("page", "domain-activity");
+    	params.put("textView", textView);
+    	params.put("listView", listView);
+    	if (toDomainList)
+    		params.put("message", "@refreshDomainList");
+    	else
+    		params.put("message", "@refresh="+name);
+    	params.put("context", getApplicationContext());
+    	params.put("appClass", this);
+    	params.put("connection", cParams);
+    	params.put("data", dParams);
 
-        	if (active)
-        		action = "start";
-        	else
-        		action = "stop";
+    	if (active)
+    		action = "start";
+    	else
+    		action = "stop";
 
-			Map<String, Object> res = (Map<String, Object>) client.call("Domain." + action, params);
-        	Toast.makeText(getApplicationContext(), res.get("msg").toString(), Toast.LENGTH_SHORT).show();
-		} catch (XMLRPCFault f) {
-			textView.setText("XMLRPC returned error: " + f.getFaultString());
-		} catch (XMLRPCException e) {
-			textView.setText("XMLRPC connection error: " + e.getMessage());
-		}
+        params.put("method", "Domain." + action);
 
-		return ret;
-	}
+   	    phpVirtControlXMLRPC rpc = new phpVirtControlXMLRPC();
+   	    rpc.execute(params);
 
-	private Boolean isDomainRunning(String name) {
-		return this.getDomainState(name).equals("running");
+   	    this.setProcessingState(true, null);
 	}
 }
