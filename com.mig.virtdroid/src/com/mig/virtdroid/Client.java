@@ -528,7 +528,9 @@ public class Client extends Activity {
 			return;
 
 		inAboutDlg = false;
+		phaseThree = false;
 		inDomainList = false;
+		changingUri = true;
 		listView.setVisibility(View.INVISIBLE);
 
         SharedPreferences sharedPrefs = PreferenceManager.getDefaultSharedPreferences(this);
@@ -567,13 +569,13 @@ public class Client extends Activity {
 
 	@SuppressWarnings("unchecked")
 	private void getDomainList() {
-		if (this.isProcessingState)
-			return;
-
 		inDomainList = true;
 		changingUri = false;
     	phaseThree = false;
 		inAboutDlg = false;
+
+		if (this.isProcessingState)
+			return;
 
 		SharedPreferences sharedPrefs = PreferenceManager.getDefaultSharedPreferences(this);
         String apikey = sharedPrefs.getString("apikey", "NULL");
@@ -611,13 +613,13 @@ public class Client extends Activity {
 
 	@SuppressWarnings("unchecked")
 	private void getDomainInformation(String name) {
-		if (this.isProcessingState)
-			return;
-
 		inDomainList = false;
 		changingUri = false;
 		inAboutDlg = false;
    	    phaseThree = true;
+
+   	    if (this.isProcessingState)
+			return;
 
 		textView.setText("Domain information:");
 		listView.setVisibility(View.INVISIBLE);
