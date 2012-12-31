@@ -58,6 +58,7 @@ class phpVirtControlXMLRPC extends AsyncTask<HashMap<String, Object>, Void, Map<
 	private ArrayList<String> cNames = new ArrayList<String>();
 	private ArrayList<String> cUris = new ArrayList<String>();
 	private String message;
+	private Boolean hasError;
 
 	private boolean isServerReachable(String str) {
 		URL url;
@@ -83,6 +84,7 @@ class phpVirtControlXMLRPC extends AsyncTask<HashMap<String, Object>, Void, Map<
         this.appClass.runOnUiThread(new Runnable() {
             public void run() {
             	textView.setText(str);
+            	hasError = true;
             }
         });
 	}
@@ -100,6 +102,8 @@ class phpVirtControlXMLRPC extends AsyncTask<HashMap<String, Object>, Void, Map<
 		this.message = (String) param.get("message");
 		String uristr = (String) param.get("address");
 		String method = (String) param.get("method");
+
+		hasError = false;
 
 		param.remove("textView");
 		param.remove("listView");
@@ -135,8 +139,10 @@ class phpVirtControlXMLRPC extends AsyncTask<HashMap<String, Object>, Void, Map<
 
 	@SuppressWarnings("unchecked")
 	public void onPostExecute(Map<String, Object> res) {
-	    this.appClass.setProcessingState(false, this.message);
+	    if (hasError)
+	    	return;
 
+	    this.appClass.setProcessingState(false, this.message);
 	    if (res == null)
 			return;
 
